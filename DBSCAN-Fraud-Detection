@@ -1,0 +1,91 @@
+# Imports
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+from sklearn.decomposition import PCA
+from sklearn.cluster import DBSCAN
+from sklearn.metrics import silhouette_score, davies_bouldin_score
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.neighbors import NearestNeighbors
+
+# Load dataset
+
+# Link to the dataset: https://www.kaggle.com/datasets/mlg-ulb/creditcardfraud
+# Ensure you have downloaded the dataset and placed it in the same directory as this script
+
+df = pd.read_csv("creditcard.csv")
+
+# Drop the 'Class' column only for unsupervised training
+X = df.drop(columns=['Class'])
+
+# Standardize features
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X)
+
+# Optional: Reduce dimensionality for performance and visualization
+pca = PCA(n_components=2)
+X_pca = pca.fit_transform(X_scaled)
+
+# Sample a subset to avoid MemoryError
+sample_size = 10000  # Adjust as needed for your memory
+if X_pca.shape[0] > sample_size:
+	X_pca_sample = X_pca[idx]
+else:
+	X_pca_sample = X_pca
+
+# DBSCAN clustering on the sample
+dbscan = DBSCAN(eps=1.5, min_samples=5)
+labels = dbscan.fit_predict(X_pca_sample)
+
+# Add results to a DataFrame (use the sample for both features and labels)
+results = pd.DataFrame(X_pca_sample, columns=["PC1", "PC2"])
+results['Cluster'] = labels
+
+# Evaluation
+n_clusters = len(set(labels)) - (1 if -1 in labels else 0)
+sil_score = silhouette_score(X_pca, labels) if n_clusters > 1 else "Not defined"
+dbi_score = davies_bouldin_score(X_pca, labels) if n_clusters > 1 else "Not defined"
+
+print(f"Number of clusters found: {n_clusters}")
+print(f"Silhouette Score: {sil_score}")
+print(f"Davies-Bouldin Index: {dbi_score}")
+
+# Visualize clusters and anomalies
+plt.figure(figsize=(10, 6))
+sns.scatterplot(data=results, x="PC1", y="PC2", hue="Cluster", palette="tab10", legend="full")
+plt.title("DBSCAN Clustering (Anomaly Detection)")
+plt.xlabel("Principal Component 1")
+plt.ylabel("Principal Component 2")
+plt.legend(title="Cluster")
+plt.show()
+
+
+# Add true labels back for evaluation (just to see how well we captured frauds)
+results['TrueLabel'] = df['Class'].iloc[idx].values
+results['Anomaly'] = (labels == -1).astype(int)
+
+# Confusion Matrix
+from sklearn.metrics import confusion_matrix, classification_report
+
+print(confusion_matrix(results['TrueLabel'], results['Anomaly']))
+print(classification_report(results['TrueLabel'], results['Anomaly'], target_names=["Normal", "Fraud"]))
+
+
+# Use PCA-reduced data for speed and clarity
+k = 5  # min_samples for DBSCAN
+neighbors = NearestNeighbors(n_neighbors=k)
+neighbors_fit = neighbors.fit(X_pca)
+distances, indices = neighbors_fit.kneighbors(X_pca)
+
+# Sort the distances to the k-th neighbor
+k_distances = np.sort(distances[:, k-1])  # distances to the 5th nearest neighbor
+
+# Plot
+plt.figure(figsize=(10, 6))
+plt.plot(k_distances)
+plt.title(f"k-Distance Graph (k={k})")
+plt.xlabel("Points sorted by distance to {}th nearest neighbor".format(k))
+plt.ylabel(f"{k}th Nearest Neighbor Distance")
+plt.grid(True)
+plt.show()
